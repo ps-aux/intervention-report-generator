@@ -4,6 +4,8 @@ import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -18,6 +20,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.border.Border;
 
@@ -32,12 +35,13 @@ public class App implements ReportGeneratorListener {
 	private static final Border BORDER_TOP_BOTTOM = BorderFactory
 			.createEmptyBorder(10, 0, 5, 0);
 
-	private String sourceFile = "/home/luce/Downloads/input.xlsx";
-	private String targetDir = "/home/luce/tmp/makro/";
+	private String inputFile = "/home/arkonix/Downloads/input.xlsx";
+	private String outputDir = "/home/arkonix/tmp/makro/";
 	private JTextArea msgBox;
 	private JLabel statusLbl;
 	private JFrame frame;
-	private JButton goButton;
+	private JButton goButton, parseButton;
+	private ReportGenerator generator;
 
 	public App() {
 		frame = new JFrame();
@@ -66,7 +70,7 @@ public class App implements ReportGeneratorListener {
 					return;
 				File f = chooser.getSelectedFile();
 				pickFileLbl.setText(f.getAbsolutePath());
-				sourceFile = f.getAbsolutePath();
+				inputFile = f.getAbsolutePath();
 			}
 		});
 
@@ -83,7 +87,7 @@ public class App implements ReportGeneratorListener {
 					return;
 				File f = chooser.getSelectedFile();
 				pickDirLbl.setText(f.getAbsolutePath());
-				targetDir = f.getAbsolutePath();
+				outputDir = f.getAbsolutePath();
 			}
 		});
 
@@ -93,6 +97,62 @@ public class App implements ReportGeneratorListener {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				start();
+			}
+		});
+
+		parseButton = new JButton("Parse excel table");
+		parseButton.addActionListener(new ActionListener() {
+
+			@Override
+			public void actionPerformed(ActionEvent e) {
+
+				statusLbl.setText("Parsing record table");
+				parseButton.setEnabled(false);
+				goButton.setEnabled(false);
+
+				SwingWorker<List<Record>, Void> worker = new SwingWorker<List<Record>, Void>() {
+
+					Exception e;
+
+					@Override
+					protected List<Record> doInBackground() throws Exception {
+						try {
+
+							generator = new ReportGenerator(inputFile,
+									outputDir, App.this);
+							List<Record> recs = generator.parseRecords();
+							return recs;
+						} catch (Exception e) {
+							this.e = e;
+							throw e;
+						}
+
+					}
+
+					@Override
+					protected void done() {
+
+						parseButton.setEnabled(true);
+						goButton.setEnabled(true);
+						if (e != null)
+							reportError(e);
+
+						statusLbl.setText("Record table parsed");
+
+						List<Record> recs;
+						try {
+							recs = get();
+							new RecordTable(frame, recs,
+									new SelectedRecordsCallback()).showDialog();
+						} catch (InterruptedException | ExecutionException e) {
+							reportError(e);
+						}
+
+					}
+
+				};
+
+				worker.execute();
 			}
 		});
 
@@ -108,8 +168,10 @@ public class App implements ReportGeneratorListener {
 
 		contentPane.add(Box.createVerticalStrut(30));
 		contentPane.add(goButton);
+		contentPane.add(Box.createVerticalStrut(10));
+		contentPane.add(parseButton);
 
-		statusLbl = new JLabel("Doing something for sure bro");
+		statusLbl = new JLabel();
 		statusLbl.setBorder(BORDER_TOP_BOTTOM);
 
 		JPanel bottomPane = new JPanel();
@@ -125,7 +187,7 @@ public class App implements ReportGeneratorListener {
 
 		frame.add(bottomPane, BorderLayout.SOUTH);
 		frame.add(contentPane);
-		frame.setSize(600, 520);
+		frame.setSize(630, 600);
 		frame.setLocationRelativeTo(null);
 
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -135,10 +197,25 @@ public class App implements ReportGeneratorListener {
 
 	}
 
-	private void reportError(String msg) {
-		msg = "Error happended during the generation of reports:\n" + msg;
-		JOptionPane.showMessageDialog(frame, msg, "Something went wrong",
-				JOptionPane.ERROR_MESSAGE);
+	private void reportError(Exception e) {
+		SwingUtilities.invokeLater(new Runnable() {
+
+			@Override
+			public void run() {
+				SwingUtilities.invokeLater(new Runnable() {
+
+					@Override
+					public void run() {
+						String localMsg = "Error happended during the generation of reports:\n"
+								+ e.getMessage();
+						e.printStackTrace();
+						JOptionPane.showMessageDialog(frame, localMsg,
+								"Something went wrong",
+								JOptionPane.ERROR_MESSAGE);
+					}
+				});
+			}
+		});
 
 	}
 
@@ -164,7 +241,7 @@ public class App implements ReportGeneratorListener {
 	}
 
 	private void start() {
-		ReportGenerator generator = new ReportGenerator(sourceFile, targetDir,
+		ReportGenerator generator = new ReportGenerator(inputFile, outputDir,
 				this);
 
 		// No need for swing worker here.
@@ -174,15 +251,16 @@ public class App implements ReportGeneratorListener {
 			public void run() {
 
 				try {
-					generator.go();
+					generator.parseAndProcessAll();
 				} catch (Exception e) {
-					reportError(e.getMessage());
+					reportError(e);
 				}
 				executionFinished();
 			}
 		};
 
 		goButton.setEnabled(false);
+		parseButton.setEnabled(false);
 		new Thread(ru).start();
 	}
 
@@ -197,6 +275,7 @@ public class App implements ReportGeneratorListener {
 			@Override
 			public void run() {
 				goButton.setEnabled(true);
+				parseButton.setEnabled(true);
 			}
 		});
 	}
@@ -228,6 +307,42 @@ public class App implements ReportGeneratorListener {
 	@Override
 	public void generationFinished(String msg) {
 		// Nothing
+	}
+
+	private class SelectedRecordsCallback implements GenerateForRecordsCallback {
+
+		@Override
+		public void generateForRecords(List<Record> records) {
+
+			assert generator != null;
+			SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+
+				Exception e;
+
+				@Override
+				protected Void doInBackground() throws Exception {
+					try {
+						generator.processRecords(records);
+					} catch (Exception e) {
+						this.e = e;
+						throw e;
+					}
+					
+					return null;
+				}
+
+				@Override
+				protected void done() {
+
+					executionFinished();
+					if (e != null)
+						reportError(e);
+				}
+
+			};
+
+			worker.execute();
+		}
 	}
 
 	private static void setLookAndFeel() {

@@ -1,14 +1,18 @@
 package sk.lkce.techforms;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.pdfbox.exceptions.COSVisitorException;
@@ -24,22 +28,21 @@ import com.itextpdf.text.pdf.AcroFields;
 import com.itextpdf.text.pdf.PdfReader;
 import com.itextpdf.text.pdf.PdfStamper;
 
-/**
- * Hello world!
- *
- */
 public class ReportGenerator {
 
 	private static final int FIRST_ROW = 9;
+	private static final int FIRST_COL = 0;
+	private static final int LAST_COL = 20;
 	private static final int PROJECT_FIRST_ROW = 1;
 	private static final int PROJECT_FIRST_COL = 1;
 
 	private static final int FIRMY_FIRST_ROW = 1;
 	private static final int FIRMY_FIRST_COL = 0;
 	private static final int FIRMY_MAX_EMPTY_ROWS = 10;
-	private static final int MAIN_MAX_EMPTY_ROWS = 40;
 	private static final int MAIN_SHEET_INDEX = 0;
 	private static final int FIRMY_SHEET_INDEX = 1;
+	private static final String SEPARATOR = System
+			.getProperty("file.separator");
 
 	private static final String PDF_NAME = "form.pdf";
 
@@ -53,72 +56,190 @@ public class ReportGenerator {
 
 	private Sheet mainSheet;
 	private Sheet firmySheet;
+	private Workbook workbook;
 
 	private String inputFile, outputDir;
 	private PdfReader pdfReader;
-	private int recordCount;
-	private int fileNo = 1;
+	private int recordCount, lastOkRow;
 	private ReportGeneratorListener listener;
+	private List<String> usedFileNames;
 
-	public ReportGenerator(String inputFile, String outputDir, ReportGeneratorListener listener) {
+	public ReportGenerator(String inputFile, String outputDir,
+			ReportGeneratorListener listener) {
 		this.inputFile = inputFile;
 		this.outputDir = outputDir;
 		this.listener = listener;
 
 	}
 
-	public void go() throws IOException, COSVisitorException, DocumentException {
+	private void initExcel() throws IOException {
 		listener.statusMsgChanged("Initializing...");
-		Workbook workbook = new XSSFWorkbook(inputFile);
+		workbook = new XSSFWorkbook(inputFile);
 		mainSheet = workbook.getSheetAt(MAIN_SHEET_INDEX);
 		firmySheet = workbook.getSheetAt(FIRMY_SHEET_INDEX);
 
 		projectMap = readProjectMap();
 		firmyMap = readFirmyMap();
+	}
 
+	private void initPdf() throws IOException {
 		URL pdfUrl = getClass().getResource(PDF_NAME);
 		pdfReader = new PdfReader(pdfUrl);
+	}
 
-		
-		listener.messageIssued("Starting report generation from the file '" + inputFile 
-				+ "' to the directory '" + outputDir + "'");
-		
-		listener.statusMsgChanged("Starting parsing table...");
-		int row = FIRST_ROW;
-		int col = 0;
-		int emptyRowsCount = 0;
-		int lastOkRow = -1;
-		listener.messageIssued("Processing records from the table at sheet with index " + MAIN_SHEET_INDEX + ", row " +
-				row + " and column " + col);
-		while (emptyRowsCount <= MAIN_MAX_EMPTY_ROWS) {
-			String val = getCellVal(row, col, mainSheet);
-			if (val.isEmpty())
-				emptyRowsCount++;
-			else {
-				lastOkRow = row;
-				Record record = readRecord(row);
-				processRecord(record);
-				emptyRowsCount = 0;
-			}
-
-			row++;
-		}
-
-		listener.messageIssued("Report generation finished. Number of generated report: " + recordCount);
+	private void finalizeGeneration() throws IOException {
+		listener.messageIssued("Report generation finished. Number of generated report: "
+				+ recordCount);
 		listener.messageIssued("Last row in the sheet which was taken "
 				+ "into consideration:" + lastOkRow + ".");
 		listener.statusMsgChanged("Finished!");
-		workbook.close();
 	}
 
-	private Record readRecord(int row) {
-		listener.statusMsgChanged("Parsing record at row " + row);
-		Record record = new Record();
+	public void parseAndProcessAll() throws IOException, COSVisitorException,
+			DocumentException {
 
-		String company = getCellVal(row, Field.COMPANY.getColumn(), mainSheet);
+		initExcel();
+		initPdf();
+		usedFileNames = new ArrayList<>();
+
+		listener.messageIssued("Starting report generation from the file '"
+				+ inputFile + "' to the directory '" + outputDir + "'");
+
+		listener.statusMsgChanged("Starting parsing table...");
+		int row = FIRST_ROW;
+		int col = 0;
+		listener.messageIssued("Parsing & processing records from the table at sheet with index "
+				+ MAIN_SHEET_INDEX + ", row " + row + " and column " + col);
+		RecordParser recParser = new RecordParser(row, col, mainSheet);
+		Record rec;
+		while ((rec = recParser.parseNext()) != null) {
+			processRecord(rec);
+		}
+
+		lastOkRow = recParser.getLastParsedRow() + 1;
+
+		workbook.close();
+		finalizeGeneration();
+	}
+
+	public List<Record> parseRecords() throws IOException {
+
+		initExcel();
+
+		int row = FIRST_ROW;
+		int col = FIRST_COL;
+		listener.messageIssued("Parsing records from the table at sheet with index "
+				+ MAIN_SHEET_INDEX + ", row " + row + " and column " + col);
+		RecordParser recParser = new RecordParser(row, col, mainSheet);
+		Record rec;
+		List<Record> recs = new ArrayList<>();
+		while ((rec = recParser.parseNext()) != null)
+			recs.add(rec);
+
+		listener.messageIssued("Parsed " + recs.size()
+				+ " records. Last parsed row: "
+				+ (recParser.getLastParsedRow() + 1));
+
+		workbook.close();
+
+		return recs;
+	}
+
+	private class RecordParser {
+
+		private int row, column;
+		private int recStart;
+		private Sheet sheet;
+		private boolean tableEnd;
+
+		public RecordParser(int row, int column, Sheet sheet) {
+			this.row = row;
+			recStart = row;
+			this.column = column;
+			this.sheet = sheet;
+		}
+
+		public Record parseNext() {
+			if (tableEnd)
+				return null;
+			while (!tableEnd) {
+				row++;
+				String val = getCellVal(row, column, sheet);
+				if (val.isEmpty()) {
+					if (isRowEmpty(row)) {
+						// We hit the bottom of the table. Row now points to the
+						// first row after the table.
+						tableEnd = true;
+						// Last record
+						return readRecord(recStart, row - 1);
+					}
+				} else {
+					// Row now points to the start of the next record
+					Record record = readRecord(recStart, row - 1);
+					recStart = row; // This will be the start of the next record
+					return record;
+				}
+			}
+
+			// We hit end of the table
+			return null;
+		}
+
+		private boolean isRowEmpty(int row) {
+			for (int col = 0; col <= LAST_COL; col++) {
+				String val = getCellVal(row, col, sheet);
+				if (!val.isEmpty())
+					return false;
+			}
+			return true;
+		}
+
+		public int getLastParsedRow() {
+			return recStart;
+		}
+
+	}
+
+	public void processRecords(Collection<Record> records) throws IOException,
+			COSVisitorException, DocumentException {
+
+		usedFileNames = new ArrayList<>();
+		List<Integer> indexes = new ArrayList<>();
+
+		for (Record rec : records)
+			indexes.add(rec.getRowStart());
+
+		listener.messageIssued("Starting processing selected records from rows "
+				+ indexes);
+		initPdf();
+		for (Record rec : records)
+			processRecord(rec);
+
+		listener.messageIssued("Generation of selected reports successfully finished");
+	}
+
+	/**
+	 * Reads the record at the given row range. For one-row record the start and
+	 * end row indexes are the same.
+	 * 
+	 * @param rowStart
+	 *            row index where record start - inclusive
+	 * @param rowEnd
+	 *            row index where record starts - inclusive
+	 * @return new record object
+	 */
+	private Record readRecord(int rowStart, int rowEnd) {
+		if (rowStart > rowEnd)
+			throw new IllegalArgumentException("Start index is greater than end index");
+		listener.statusMsgChanged("Parsing record at rows " + rowStart + " - "
+				+ rowEnd);
+		Record record = new Record(rowStart + 1, rowEnd + 1);
+
+		String company = getCellVal(rowStart, Field.COMPANY.getColumn(),
+				mainSheet);
 		String key = company.trim().toLowerCase();
 		FirmyRecord firmyRecord = firmyMap.get(key);
-		String rowStr = "Row: " + (row + 1);
+		String rowStr = "Row: " + (rowStart + 1) + " - " + (rowEnd + 1);
 		if (firmyRecord != null)
 			company = firmyMap.get(key).getFullName();
 		else
@@ -127,27 +248,32 @@ public class ReportGenerator {
 					+ company + "'");
 		record.setValue(Field.COMPANY, company);
 
-		int year = getYear(row);
-
-		Map<Integer, Integer> reportNoMap = reportNoMapAll.get(key);
-		Integer reportNo;
-		if (reportNoMap == null) {
-			Map<Integer, Integer> map = new HashMap<>();
-			reportNoMapAll.put(key, map);
-			map.put(year, 1);
-			reportNo = 1;
-		} else {
-			reportNo = reportNoMap.get(year);
-			if (reportNo == null) {
-				reportNoMap.put(year, 1);
+		int year = getYear(rowStart);
+		String intervReportNo;
+		if (year != 0) {
+			Map<Integer, Integer> reportNoMap = reportNoMapAll.get(key);
+			Integer reportNo;
+			if (reportNoMap == null) {
+				Map<Integer, Integer> map = new HashMap<>();
+				reportNoMapAll.put(key, map);
+				map.put(year, 1);
 				reportNo = 1;
 			} else {
-				reportNo++;
-				reportNoMap.put(year, reportNo);
+				reportNo = reportNoMap.get(year);
+				if (reportNo == null) {
+					reportNoMap.put(year, 1);
+					reportNo = 1;
+				} else {
+					reportNo++;
+					reportNoMap.put(year, reportNo);
+				}
 			}
+			intervReportNo = year + String.format("%04d", reportNo);
+		} else { // There is no year specified
+			// Could no generate report number = no report number
+			intervReportNo = "";
 		}
 
-		String intervReportNo = year + String.format("%04d", reportNo);
 		record.setValue(Field.REPORT_NO, intervReportNo);
 
 		String tName, tPhone, tEmail;
@@ -166,69 +292,82 @@ public class ReportGenerator {
 		record.setValue(Field.TECHNICIAN_PHONE, tPhone);
 
 		// Contact
-		String contact = getCellVal(row, Field.CONTACT.getColumn(), mainSheet);
+		String contact = getCellVal(rowStart, Field.CONTACT.getColumn(),
+				mainSheet);
 		record.setValue(Field.CONTACT, contact);
 
 		// Address
-		String address = getCellVal(row, Field.ADDRESS.getColumn(), mainSheet);
+		String address = getCellVal(rowStart, Field.ADDRESS.getColumn(),
+				mainSheet).trim();
 		String projectKey = address.trim().toLowerCase();
 
 		if (projectMap.containsKey(projectKey))
 			address = projectMap.get(projectKey);
 		record.setValue(Field.ADDRESS, address);
+		record.setProject(address);
 
 		// Maintenance
-		boolean corrective = getCellVal(row, Field.CORRECTIVE.getColumn(),
+		boolean corrective = getCellVal(rowStart, Field.CORRECTIVE.getColumn(),
 				mainSheet).toLowerCase().equals("yes");
-		boolean preventive = getCellVal(row, Field.PREVENTIVE.getColumn(),
+		boolean preventive = getCellVal(rowStart, Field.PREVENTIVE.getColumn(),
 				mainSheet).toLowerCase().equals("yes");
-		boolean improvement = getCellVal(row, Field.IMPROVEMENT.getColumn(),
-				mainSheet).toLowerCase().equals("yes");
+		boolean improvement = getCellVal(rowStart,
+				Field.IMPROVEMENT.getColumn(), mainSheet).toLowerCase().equals(
+				"yes");
 
 		record.setValue(Field.CORRECTIVE, corrective);
 		record.setValue(Field.PREVENTIVE, preventive);
 		record.setValue(Field.IMPROVEMENT, improvement);
 
 		// Object of intervention
-		String objOfIntv = getCellVal(row,
+		String objOfIntv = getCellVal(rowStart,
 				Field.OBJECT_OF_INTERVENTION.getColumn(), mainSheet);
 		record.setValue(Field.OBJECT_OF_INTERVENTION, objOfIntv);
 
 		// Date
 		// TODO handle
-		Date date1 = DateUtil.getJavaDate(mainSheet.getRow(row)
-				.getCell(Field.DATE.getColumn()).getNumericCellValue());
-		Date date2 = null;
+		String date;
+		double num = mainSheet.getRow(rowStart).getCell(Field.DATE.getColumn())
+				.getNumericCellValue();
 
-		Cell dateToCell = mainSheet.getRow(row).getCell(
-				Field.DATE.getColumn() + 1);
-		if (dateToCell.getCellType() == Cell.CELL_TYPE_NUMERIC) {
-			double toDateNum = dateToCell.getNumericCellValue();
-			date2 = DateUtil.getJavaDate(toDateNum);
+		if (num == 0)
+			date = "";
+		else {
+
+			Date date1 = DateUtil.getJavaDate(num);
+			Date date2 = null;
+
+			Cell dateToCell = mainSheet.getRow(rowStart).getCell(
+					Field.DATE.getColumn() + 1);
+			if (dateToCell.getCellType() == Cell.CELL_TYPE_NUMERIC) {
+				double toDateNum = dateToCell.getNumericCellValue();
+				date2 = DateUtil.getJavaDate(toDateNum);
+			}
+
+			date = DATE_FORMAT.format(date1);
+			if (date2 != null) {
+				date += " - " + DATE_FORMAT.format(date2);
+				if (date1.compareTo(date2) > 0)
+					warn(rowStr + ": Date FROM is after the date TO.");
+			}
 		}
-
-		warn(rowStr + ": Date FROM is after the date TO.");
-
-		String date = DATE_FORMAT.format(date1);
-		if (date2 != null)
-			date += " - " + DATE_FORMAT.format(date2);
-
 		record.setValue(Field.DATE, date);
 		// Arrival & departure
-		String arrival = getHourAsString(row, Field.ARRIVAL.getColumn(),
+		String arrival = getHourAsString(rowStart, Field.ARRIVAL.getColumn(),
 				mainSheet);
 		record.setValue(Field.ARRIVAL, arrival);
 
-		String departure = getHourAsString(row, Field.DEPARTURE.getColumn(),
-				mainSheet);
+		String departure = getHourAsString(rowStart,
+				Field.DEPARTURE.getColumn(), mainSheet);
 		record.setValue(Field.DEPARTURE, departure);
 
 		// Duration
-		String duration = getCellVal(row, Field.DURATION.getColumn(), mainSheet);
+		String duration = getCellVal(rowStart, Field.DURATION.getColumn(),
+				mainSheet);
 		record.setValue(Field.DURATION, duration);
 
 		// Number of technicians
-		String noOfTechnicians = getCellVal(row,
+		String noOfTechnicians = getCellVal(rowStart,
 				Field.NO_OF_TECHNICIANS.getColumn(), mainSheet);
 		try {
 			double noOfTD = Double.parseDouble(noOfTechnicians);
@@ -240,35 +379,47 @@ public class ReportGenerator {
 		record.setValue(Field.NO_OF_TECHNICIANS, noOfTechnicians);
 
 		// Stops disturbing the production
-		String stops = getCellVal(row, Field.STOPS.getColumn(), mainSheet);
-		record.setValue(Field.STOPS, stops.split("/n"));
+		List<String> stops = new ArrayList<>();
+		for (int i = rowStart; i <= rowEnd; i++) {
+			String stop = getCellVal(i, Field.STOPS.getColumn(), mainSheet);
+			if (!stop.trim().isEmpty())
+				stops.add(stop);
+
+		}
+		record.setValue(Field.STOPS, stops);
 
 		// Description of the intervention
-		String desc = getCellVal(row, Field.DESCRIPTION.getColumn(), mainSheet);
-		String[] lines = desc.split("/n");
-		record.setValue(Field.DESCRIPTION, lines);
+		List<String> descs = new ArrayList<>();
+		for (int i = rowStart; i <= rowEnd; i++) {
+			String desc = getCellVal(i, Field.DESCRIPTION.getColumn(),
+					mainSheet);
+			if (!desc.trim().isEmpty())
+				descs.add(desc);
+		}
+		record.setValue(Field.DESCRIPTION, descs);
 
 		// Spare parts reference
-		String reference = getCellVal(row, Field.REFERENCE.getColumn(),
+		String reference = getCellVal(rowStart, Field.REFERENCE.getColumn(),
 				mainSheet);
 		record.setValue(Field.REFERENCE, reference);
 
 		// Spare parts quantity
-		String quantity = getCellVal(row, Field.QUANTITY.getColumn(), mainSheet);
+		String quantity = getCellVal(rowStart, Field.QUANTITY.getColumn(),
+				mainSheet);
 		record.setValue(Field.QUANTITY, quantity);
 
 		// Spare parts unitPrice
-		String unitPrice = getCellVal(row, Field.UNIT_PRICE.getColumn(),
+		String unitPrice = getCellVal(rowStart, Field.UNIT_PRICE.getColumn(),
 				mainSheet);
 		record.setValue(Field.UNIT_PRICE, unitPrice);
 
 		// Billable
-		boolean billable = getCellVal(row, Field.BILLABLE.getColumn(),
+		boolean billable = getCellVal(rowStart, Field.BILLABLE.getColumn(),
 				mainSheet).toLowerCase().equals("yes");
 		record.setValue(Field.BILLABLE, billable);
 
 		// Invoicing
-		boolean included = getCellVal(row,
+		boolean included = getCellVal(rowStart,
 				Field.INCLUDED_IN_CONTRACT.getColumn(), mainSheet)
 				.toLowerCase().equals("yes");
 		record.setValue(Field.INCLUDED_IN_CONTRACT, included);
@@ -295,9 +446,9 @@ public class ReportGenerator {
 		Cell cell = mainSheet.getRow(row).getCell(Field.REPORT_NO.getColumn());
 		double dateNum = cell.getNumericCellValue();
 
-		// if (dateNum == 0)
-		// throw new IllegalArgumentException("The date at row " + (row +1) +
-		// " is 0 (probably missing value)");
+		// Missing date
+		if (dateNum == 0)
+			return 0;
 
 		Date date = DateUtil.getJavaDate(dateNum);
 		calendar.setTime(date);
@@ -307,7 +458,42 @@ public class ReportGenerator {
 	private void processRecord(Record record) throws IOException,
 			COSVisitorException, DocumentException {
 
-		String path = outputDir + "report_" + fileNo++ + ".pdf";
+		String project = record.getProject();
+		if (project.isEmpty())
+			project = "unknown_project";
+
+		String dir = outputDir + SEPARATOR + project;
+
+		// Ensure dir is created
+		File d = new File(dir);
+		if (!d.exists())
+			d.mkdir();
+
+		String repNo = (String) record.getValue(Field.REPORT_NO);
+		repNo = repNo.trim();
+		if (repNo.isEmpty())
+			repNo = "no_number";
+
+		String date = (String) record.getValue(Field.DATE);
+		date = date.trim();
+		date = date.replaceAll("/", "_");
+		date = date.replaceAll(" ", "");
+		String name = repNo + "-" + project + "-" + date;
+
+		String path = dir + SEPARATOR + name;
+
+		// Ensure the file name is not taken by another file from this batch
+		// so it is not overwritten
+		if (usedFileNames.contains(path)) {
+			int suffix = 1;
+			String modPath = path + "-" + suffix;
+			while (usedFileNames.contains(modPath)) {
+				suffix++;
+				modPath = path + "-" + suffix;
+			}
+			path = modPath;
+		}
+
 		PdfReader copyReader = new PdfReader(pdfReader);
 		listener.statusMsgChanged("Creating pdf file " + path);
 		PdfStamper pdfStamper = new PdfStamper(copyReader,
@@ -328,24 +514,26 @@ public class ReportGenerator {
 			}
 
 			if (fieldType == Field.STOPS) {
-				String[] rows = (String[]) val;
+				@SuppressWarnings("unchecked")
+				List<String> rows = (List<String>) val;
 
-				for (int i = 1; i <= rows.length; i++) {
+				for (int i = 1; i <= rows.size(); i++) {
 					String fieldName = "Stops" + i;
 					if (i < 8)
-						setField(acroFields, fieldName, rows[i- 1]);
+						setField(acroFields, fieldName, rows.get(i - 1));
 					else
 						warn("Will not set Stops" + i + " field for " + record
 								+ ". "
 								+ "The number of lines is greater than 7");
 				}
 			} else if (fieldType == Field.DESCRIPTION) {
-				String[] rows = (String[]) val;
+				@SuppressWarnings("unchecked")
+				List<String> rows = (List<String>) val;
 
-				for (int i = 1; i <= rows.length; i++) {
+				for (int i = 1; i <= rows.size(); i++) {
 					String fieldName = "Description" + i;
 					if (i < 14)
-						setField(acroFields, fieldName, rows[i- 1]);
+						setField(acroFields, fieldName, rows.get(i - 1));
 					else
 						warn("Will not set Description" + i + " field for "
 								+ record + ". "
@@ -361,11 +549,13 @@ public class ReportGenerator {
 		pdfStamper.close();
 	}
 
-	private void setField(AcroFields fields, String name, String val) throws IOException, DocumentException {
+	private void setField(AcroFields fields, String name, String val)
+			throws IOException, DocumentException {
 
 		boolean wasSet = fields.setField(name, val);
 		if (!wasSet)
-			throw new IllegalStateException("Field '" + name + "'could not be set");
+			throw new IllegalStateException("Field '" + name
+					+ "'could not be set");
 	}
 
 	private static String getCellVal(int row, int col, Sheet sheet) {
@@ -408,7 +598,7 @@ public class ReportGenerator {
 			row++;
 
 			if (!val1.isEmpty())
-				map.put(val1, val2);
+				map.put(val1.trim().toLowerCase(), val2);
 		} while (!val1.isEmpty());
 
 		return map;
@@ -470,5 +660,5 @@ public class ReportGenerator {
 	private void warn(String msg) {
 		listener.warningIssued(msg);
 	}
-	
+
 }

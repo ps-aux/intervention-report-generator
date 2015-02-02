@@ -6,6 +6,13 @@ import java.util.Map;
 public class Record {
 
 	private Map<Field, Object> values = new HashMap<>();
+	private int rowStart, rowEnd;
+	private String project;
+	
+	public Record(int rowStart, int rowEnd) {
+		this.rowStart = rowStart;
+		this.rowEnd = rowEnd;
+	}
 
 	public void setValue(Field field, Object val) {
 		if (field == null || val == null)
@@ -21,9 +28,35 @@ public class Record {
 
 		values.put(field, val);
 	}
+	
+
+	public String getProject() {
+		return project;
+	}
+
+	public void setProject(String project) {
+		this.project = project;
+	}
 
 	public Object getValue(Field field) {
 		return values.get(field);
+	}
+	
+
+	public int getRowStart() {
+		return rowStart;
+	}
+
+	public void setRowStart(int rowStart) {
+		this.rowStart = rowStart;
+	}
+
+	public int getRowEnd() {
+		return rowEnd;
+	}
+
+	public void setRowEnd(int rowEnd) {
+		this.rowEnd = rowEnd;
 	}
 
 	@Override

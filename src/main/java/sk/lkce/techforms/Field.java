@@ -1,5 +1,7 @@
 package sk.lkce.techforms;
 
+import java.util.List;
+
 
 enum Field {
 
@@ -19,8 +21,8 @@ enum Field {
 	DEPARTURE("Departure", 11, String.class),
 	DURATION("Duration", 12, String.class),
 	NO_OF_TECHNICIANS("NoOfTechnicians", 13, String.class),
-	STOPS("Stops", 14, String[].class),
-	DESCRIPTION("Description", 15, String[].class),
+	STOPS("Stops", 14, List.class),
+	DESCRIPTION("Description", 15, List.class),
 	REFERENCE("Reference", 16, String.class),
 	QUANTITY("Quantity", 17, String.class),
 	UNIT_PRICE("UnitPrice", 18, String.class),
