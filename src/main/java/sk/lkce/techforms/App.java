@@ -18,6 +18,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.border.Border;
 
 public class App implements ReportGeneratorListener {
@@ -186,6 +187,7 @@ public class App implements ReportGeneratorListener {
 	}
 
 	public static void main(String[] args) {
+		setLookAndFeel();
 		new App();
 	}
 
@@ -226,6 +228,36 @@ public class App implements ReportGeneratorListener {
 	@Override
 	public void generationFinished(String msg) {
 		// Nothing
+	}
+
+	private static void setLookAndFeel() {
+		try {
+
+			String lookAndFeel = javax.swing.UIManager
+					.getSystemLookAndFeelClassName();
+
+			if (lookAndFeel.endsWith("MetalLookAndFeel")) // This might be Linux
+															// so let's try GTK
+															// look and feel.
+				lookAndFeel = "com.sun.java.swing.plaf.gtk.GTKLookAndFeel";
+
+			javax.swing.UIManager.setLookAndFeel(lookAndFeel);
+
+			javax.swing.UIManager.getDefaults().put("Button.showMnemonics",
+					Boolean.TRUE);
+		} catch (ClassNotFoundException e) {
+			// Nothing to do here. Just print to err stream.
+			e.printStackTrace();
+		} catch (InstantiationException e) {
+			// Nothing to do here. Just print to err stream.
+			e.printStackTrace();
+		} catch (IllegalAccessException e) {
+			// Nothing to do here. Just print to err stream.
+			e.printStackTrace();
+		} catch (UnsupportedLookAndFeelException e) {
+			// Nothing to do here. Just print to err stream.
+			e.printStackTrace();
+		}
 	}
 
 }
