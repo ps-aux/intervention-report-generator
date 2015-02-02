@@ -38,6 +38,8 @@ public class ReportGenerator {
 	private static final int FIRMY_FIRST_COL = 0;
 	private static final int FIRMY_MAX_EMPTY_ROWS = 10;
 	private static final int MAIN_MAX_EMPTY_ROWS = 40;
+	private static final int MAIN_SHEET_INDEX = 0;
+	private static final int FIRMY_SHEET_INDEX = 1;
 
 	private static final String PDF_NAME = "form.pdf";
 
@@ -54,18 +56,22 @@ public class ReportGenerator {
 
 	private String inputFile, outputDir;
 	private PdfReader pdfReader;
+	private int recordCount;
 	private int fileNo = 1;
+	private ReportGeneratorListener listener;
 
-	public ReportGenerator(String inputFile, String outputDir) {
+	public ReportGenerator(String inputFile, String outputDir, ReportGeneratorListener listener) {
 		this.inputFile = inputFile;
 		this.outputDir = outputDir;
+		this.listener = listener;
 
 	}
 
 	public void go() throws IOException, COSVisitorException, DocumentException {
+		listener.statusMsgChanged("Initializing...");
 		Workbook workbook = new XSSFWorkbook(inputFile);
-		mainSheet = workbook.getSheetAt(0);
-		firmySheet = workbook.getSheetAt(1);
+		mainSheet = workbook.getSheetAt(MAIN_SHEET_INDEX);
+		firmySheet = workbook.getSheetAt(FIRMY_SHEET_INDEX);
 
 		projectMap = readProjectMap();
 		firmyMap = readFirmyMap();
@@ -73,14 +79,23 @@ public class ReportGenerator {
 		URL pdfUrl = getClass().getResource(PDF_NAME);
 		pdfReader = new PdfReader(pdfUrl);
 
+		
+		listener.messageIssued("Starting report generation from the file '" + inputFile 
+				+ "' to the directory '" + outputDir + "'");
+		
+		listener.statusMsgChanged("Starting parsing table...");
 		int row = FIRST_ROW;
 		int col = 0;
 		int emptyRowsCount = 0;
+		int lastOkRow = -1;
+		listener.messageIssued("Processing records from the table at sheet with index " + MAIN_SHEET_INDEX + ", row " +
+				row + " and column " + col);
 		while (emptyRowsCount <= MAIN_MAX_EMPTY_ROWS) {
 			String val = getCellVal(row, col, mainSheet);
 			if (val.isEmpty())
 				emptyRowsCount++;
 			else {
+				lastOkRow = row;
 				Record record = readRecord(row);
 				processRecord(record);
 				emptyRowsCount = 0;
@@ -89,11 +104,15 @@ public class ReportGenerator {
 			row++;
 		}
 
+		listener.messageIssued("Report generation finished. Number of generated report: " + recordCount);
+		listener.messageIssued("Last row in the sheet which was taken "
+				+ "into consideration:" + lastOkRow + ".");
+		listener.statusMsgChanged("Finished!");
 		workbook.close();
-
 	}
 
 	private Record readRecord(int row) {
+		listener.statusMsgChanged("Parsing record at row " + row);
 		Record record = new Record();
 
 		String company = getCellVal(row, Field.COMPANY.getColumn(), mainSheet);
@@ -138,8 +157,8 @@ public class ReportGenerator {
 			tEmail = firmyRecord.getTechnicianEmail();
 		} else {
 			warn(rowStr
-					+ ": Could not determine technician details without the company record. Settings to 'N/A'.");
-			tName = tPhone = tEmail = "N/A";
+					+ ": Could not determine technician details without the company record. Empty string will be set.");
+			tName = tPhone = tEmail = "";
 		}
 
 		record.setValue(Field.TECHNICIAN_NAME, tName);
@@ -288,9 +307,11 @@ public class ReportGenerator {
 	private void processRecord(Record record) throws IOException,
 			COSVisitorException, DocumentException {
 
+		String path = outputDir + "report_" + fileNo++ + ".pdf";
 		PdfReader copyReader = new PdfReader(pdfReader);
+		listener.statusMsgChanged("Creating pdf file " + path);
 		PdfStamper pdfStamper = new PdfStamper(copyReader,
-				new FileOutputStream(outputDir + "report_" + fileNo++ + ".pdf"));
+				new FileOutputStream(path));
 
 		AcroFields acroFields = pdfStamper.getAcroFields();
 
@@ -336,6 +357,7 @@ public class ReportGenerator {
 			}
 		}
 
+		recordCount++;
 		pdfStamper.close();
 	}
 
@@ -446,6 +468,7 @@ public class ReportGenerator {
 	}
 
 	private void warn(String msg) {
-		System.out.println("WARNING: " + msg);
+		listener.warningIssued(msg);
 	}
+	
 }
