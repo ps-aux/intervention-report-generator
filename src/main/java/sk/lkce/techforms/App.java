@@ -27,7 +27,7 @@ import javax.swing.border.Border;
 public class App implements ReportGeneratorListener {
 
 	private static final String WIN_TITLE = "Intervention Report Generator";
-	private static final String APP_TITLE = "Intervention Report Generator 1.0";
+	private static final String APP_TITLE = "Intervention Report Generator 1.1";
 
 	private static final Border BORDER = BorderFactory.createEmptyBorder(10,
 			10, 10, 10);
@@ -35,8 +35,8 @@ public class App implements ReportGeneratorListener {
 	private static final Border BORDER_TOP_BOTTOM = BorderFactory
 			.createEmptyBorder(10, 0, 5, 0);
 
-	private String inputFile = "/home/arkonix/Downloads/input.xlsx";
-	private String outputDir = "/home/arkonix/tmp/makro/";
+	private String inputFile;
+	private String outputDir;
 	private JTextArea msgBox;
 	private JLabel statusLbl;
 	private JFrame frame;
@@ -44,6 +44,11 @@ public class App implements ReportGeneratorListener {
 	private ReportGenerator generator;
 
 	public App() {
+		
+		inputFile = System.getProperty("repgen.input");
+		outputDir = System.getProperty("repgen.output");
+		
+		
 		frame = new JFrame();
 		frame.setTitle(WIN_TITLE);
 
@@ -58,7 +63,9 @@ public class App implements ReportGeneratorListener {
 		contentPane.setLayout(layout);
 
 		JButton pickFileButton = new JButton("Choose input   file");
-		JLabel pickFileLbl = new JLabel("No input file chosen");
+		String pfLblTxt =	inputFile == null ? "No input file chosen" : inputFile;
+		final JLabel pickFileLbl = new JLabel(pfLblTxt);
+
 		pickFileButton.addActionListener(new ActionListener() {
 
 			@Override
@@ -71,11 +78,13 @@ public class App implements ReportGeneratorListener {
 				File f = chooser.getSelectedFile();
 				pickFileLbl.setText(f.getAbsolutePath());
 				inputFile = f.getAbsolutePath();
+				checkButtons();
 			}
 		});
 
 		JButton pickDirButton = new JButton("Choose output dir");
-		JLabel pickDirLbl = new JLabel("No ouput dir chosen");
+		String pdLblTxt =	inputFile == null ? "No output dir chosen" : outputDir;
+		final JLabel pickDirLbl = new JLabel(pdLblTxt);
 		pickDirButton.addActionListener(new ActionListener() {
 
 			@Override
@@ -88,6 +97,7 @@ public class App implements ReportGeneratorListener {
 				File f = chooser.getSelectedFile();
 				pickDirLbl.setText(f.getAbsolutePath());
 				outputDir = f.getAbsolutePath();
+				checkButtons();
 			}
 		});
 
@@ -183,21 +193,30 @@ public class App implements ReportGeneratorListener {
 		bottomPane.add(statusLbl);
 		bottomPane.add(new JScrollPane(msgBox));
 
+		checkButtons();
+
 		bottomPane.setBorder(BORDER);
 
 		frame.add(bottomPane, BorderLayout.SOUTH);
 		frame.add(contentPane);
-		frame.setSize(630, 600);
+		frame.setSize(650, 600);
 		frame.setLocationRelativeTo(null);
 
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.setResizable(false);
+//		frame.setResizable(false);
 
 		frame.setVisible(true);
+		
+	}
+	
+	private void checkButtons (){
+		boolean enabled =  inputFile != null && outputDir != null;
+		parseButton.setEnabled(enabled);
+		goButton.setEnabled(enabled);
 
 	}
 
-	private void reportError(Exception e) {
+	private void reportError(final Exception e) {
 		SwingUtilities.invokeLater(new Runnable() {
 
 			@Override
@@ -219,7 +238,7 @@ public class App implements ReportGeneratorListener {
 
 	}
 
-	private void addMsg(String msg) {
+	private void addMsg(final String msg) {
 
 		SwingUtilities.invokeLater(new Runnable() {
 
@@ -241,7 +260,7 @@ public class App implements ReportGeneratorListener {
 	}
 
 	private void start() {
-		ReportGenerator generator = new ReportGenerator(inputFile, outputDir,
+		final ReportGenerator generator = new ReportGenerator(inputFile, outputDir,
 				this);
 
 		// No need for swing worker here.
@@ -282,18 +301,16 @@ public class App implements ReportGeneratorListener {
 
 	@Override
 	public void warningIssued(String msg) {
-		System.out.println("warning " + msg);
-		addMsg(msg);
+		addMsg("WARNING: " + msg);
 	}
 
 	@Override
 	public void messageIssued(String msg) {
-		System.out.println("msg " + msg);
 		addMsg(msg);
 	}
 
 	@Override
-	public void statusMsgChanged(String msg) {
+	public void statusMsgChanged(final String msg) {
 
 		SwingUtilities.invokeLater(new Runnable() {
 
@@ -312,7 +329,7 @@ public class App implements ReportGeneratorListener {
 	private class SelectedRecordsCallback implements GenerateForRecordsCallback {
 
 		@Override
-		public void generateForRecords(List<Record> records) {
+		public void generateForRecords(final List<Record> records) {
 
 			assert generator != null;
 			SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {

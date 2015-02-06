@@ -21,8 +21,8 @@ public class RecordTable {
 	private JTable table;
 	private JButton button;
 
-	public RecordTable(JFrame frame, List<Record> records,
-			GenerateForRecordsCallback callback) {
+	public RecordTable(JFrame frame, final List<Record> records,
+			final GenerateForRecordsCallback callback) {
 		dialog = new JDialog(frame);
 		dialog.setTitle("Parsed records");
 		RecordTableModel model = new RecordTableModel(records);

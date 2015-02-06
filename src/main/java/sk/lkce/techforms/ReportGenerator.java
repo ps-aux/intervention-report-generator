@@ -60,7 +60,7 @@ public class ReportGenerator {
 
 	private String inputFile, outputDir;
 	private PdfReader pdfReader;
-	private int recordCount, lastOkRow;
+	private int recordCount;
 	private ReportGeneratorListener listener;
 	private List<String> usedFileNames;
 
@@ -87,14 +87,6 @@ public class ReportGenerator {
 		pdfReader = new PdfReader(pdfUrl);
 	}
 
-	private void finalizeGeneration() throws IOException {
-		listener.messageIssued("Report generation finished. Number of generated report: "
-				+ recordCount);
-		listener.messageIssued("Last row in the sheet which was taken "
-				+ "into consideration:" + lastOkRow + ".");
-		listener.statusMsgChanged("Finished!");
-	}
-
 	public void parseAndProcessAll() throws IOException, COSVisitorException,
 			DocumentException {
 
@@ -119,7 +111,31 @@ public class ReportGenerator {
 		lastOkRow = recParser.getLastParsedRow() + 1;
 
 		workbook.close();
-		finalizeGeneration();
+		listener.messageIssued("Report generation finished. Number of generated report is "
+				+ recordCount);
+		listener.messageIssued("Last found record was at row "
+				+ (recParser.getLastParsedRow() + 1));
+		listener.messageIssued("------------------------------------");
+		listener.statusMsgChanged("Finished!");
+	}
+
+	public void processRecords(Collection<Record> records) throws IOException,
+			COSVisitorException, DocumentException {
+
+		usedFileNames = new ArrayList<>();
+		List<Integer> indexes = new ArrayList<>();
+
+		for (Record rec : records)
+			indexes.add(rec.getRowStart());
+
+		listener.messageIssued("Starting processing selected records from rows "
+				+ indexes);
+		initPdf();
+		for (Record rec : records)
+			processRecord(rec);
+
+		listener.messageIssued("Generation of selected reports successfully finished");
+		listener.messageIssued("------------------------------------");
 	}
 
 	public List<Record> parseRecords() throws IOException {
@@ -200,24 +216,6 @@ public class ReportGenerator {
 
 	}
 
-	public void processRecords(Collection<Record> records) throws IOException,
-			COSVisitorException, DocumentException {
-
-		usedFileNames = new ArrayList<>();
-		List<Integer> indexes = new ArrayList<>();
-
-		for (Record rec : records)
-			indexes.add(rec.getRowStart());
-
-		listener.messageIssued("Starting processing selected records from rows "
-				+ indexes);
-		initPdf();
-		for (Record rec : records)
-			processRecord(rec);
-
-		listener.messageIssued("Generation of selected reports successfully finished");
-	}
-
 	/**
 	 * Reads the record at the given row range. For one-row record the start and
 	 * end row indexes are the same.
@@ -230,7 +228,8 @@ public class ReportGenerator {
 	 */
 	private Record readRecord(int rowStart, int rowEnd) {
 		if (rowStart > rowEnd)
-			throw new IllegalArgumentException("Start index is greater than end index");
+			throw new IllegalArgumentException(
+					"Start index is greater than end index");
 		listener.statusMsgChanged("Parsing record at rows " + rowStart + " - "
 				+ rowEnd);
 		Record record = new Record(rowStart + 1, rowEnd + 1);
@@ -478,7 +477,7 @@ public class ReportGenerator {
 		date = date.trim();
 		date = date.replaceAll("/", "_");
 		date = date.replaceAll(" ", "");
-		String name = repNo + "-" + project + "-" + date;
+		String name = repNo + "-" + project + "-" + date + ".pdf";
 
 		String path = dir + SEPARATOR + name;
 
@@ -519,12 +518,14 @@ public class ReportGenerator {
 
 				for (int i = 1; i <= rows.size(); i++) {
 					String fieldName = "Stops" + i;
-					if (i < 8)
+					if (i <= 7)
 						setField(acroFields, fieldName, rows.get(i - 1));
 					else
-						warn("Will not set Stops" + i + " field for " + record
-								+ ". "
-								+ "The number of lines is greater than 7");
+						warn("Will not set Stops" + i
+								+ " field for the record at rows "
+								+ record.getRowStart() + " - "
+								+ record.getRowEnd()
+								+ " - the number of lines is greater than 7");
 				}
 			} else if (fieldType == Field.DESCRIPTION) {
 				@SuppressWarnings("unchecked")
@@ -532,12 +533,14 @@ public class ReportGenerator {
 
 				for (int i = 1; i <= rows.size(); i++) {
 					String fieldName = "Description" + i;
-					if (i < 14)
+					if (i <= 14)
 						setField(acroFields, fieldName, rows.get(i - 1));
 					else
-						warn("Will not set Description" + i + " field for "
-								+ record + ". "
-								+ "The number of lines is greater than 14");
+						warn("Will not set Description" + i
+								+ " field for the record at row "
+								+ record.getRowStart() + " - "
+								+ record.getRowEnd()
+								+ " - the number of lines is greater than 14");
 				}
 
 			} else {
