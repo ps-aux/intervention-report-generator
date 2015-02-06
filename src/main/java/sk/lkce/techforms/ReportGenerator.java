@@ -108,8 +108,6 @@ public class ReportGenerator {
 			processRecord(rec);
 		}
 
-		lastOkRow = recParser.getLastParsedRow() + 1;
-
 		workbook.close();
 		listener.messageIssued("Report generation finished. Number of generated report is "
 				+ recordCount);
