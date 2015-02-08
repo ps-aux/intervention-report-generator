@@ -38,34 +38,19 @@ public class RecordTableModel extends AbstractTableModel{
 		
 		Record rec = records.get(rowIndex);
 		if (columnIndex == 0)
-			return  rec.getRowStart() + " - " + rec.getRowEnd();
+			return  rec.getRowStart();
 		
 		
 		Field field = Field.values()[columnIndex - 1];
 		
 		Object o =  rec.getValue(field);
 		
-	
-		
-		if (field == Field.STOPS || field == Field.DESCRIPTION) {
-			@SuppressWarnings("unchecked")
-			List<String> rows =  (List<String>) o;
-			StringBuilder sb = new StringBuilder();
+		if (o instanceof String) {
 			
-			if (rows.size() == 0)
-				return "";
-			
-			for (int i = 0; i < rows.size(); i++) {
-				sb.append(rows.get(i));
-				if (i < rows.size() -1)
-					sb.append(" | ");
-			}
-			
-			return sb.toString();
 		}
 		
+		
 		return o;
-
 	}
 
 }

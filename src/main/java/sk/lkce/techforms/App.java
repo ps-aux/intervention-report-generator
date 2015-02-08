@@ -27,7 +27,7 @@ import javax.swing.border.Border;
 public class App implements ReportGeneratorListener {
 
 	private static final String WIN_TITLE = "Intervention Report Generator";
-	private static final String APP_TITLE = "Intervention Report Generator 1.1";
+	private static final String APP_TITLE = "Intervention Report Generator 1.2";
 
 	private static final Border BORDER = BorderFactory.createEmptyBorder(10,
 			10, 10, 10);

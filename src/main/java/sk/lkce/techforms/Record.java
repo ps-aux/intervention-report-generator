@@ -6,12 +6,11 @@ import java.util.Map;
 public class Record {
 
 	private Map<Field, Object> values = new HashMap<>();
-	private int rowStart, rowEnd;
+	private int rowStart;
 	private String project;
 	
-	public Record(int rowStart, int rowEnd) {
+	public Record(int rowStart) {
 		this.rowStart = rowStart;
-		this.rowEnd = rowEnd;
 	}
 
 	public void setValue(Field field, Object val) {
@@ -49,14 +48,6 @@ public class Record {
 
 	public void setRowStart(int rowStart) {
 		this.rowStart = rowStart;
-	}
-
-	public int getRowEnd() {
-		return rowEnd;
-	}
-
-	public void setRowEnd(int rowEnd) {
-		this.rowEnd = rowEnd;
 	}
 
 	@Override

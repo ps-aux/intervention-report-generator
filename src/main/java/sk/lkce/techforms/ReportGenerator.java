@@ -32,7 +32,6 @@ public class ReportGenerator {
 
 	private static final int FIRST_ROW = 9;
 	private static final int FIRST_COL = 0;
-	private static final int LAST_COL = 20;
 	private static final int PROJECT_FIRST_ROW = 1;
 	private static final int PROJECT_FIRST_COL = 1;
 
@@ -162,13 +161,12 @@ public class ReportGenerator {
 	private class RecordParser {
 
 		private int row, column;
-		private int recStart;
+		private int lastRow;
 		private Sheet sheet;
 		private boolean tableEnd;
 
 		public RecordParser(int row, int column, Sheet sheet) {
 			this.row = row;
-			recStart = row;
 			this.column = column;
 			this.sheet = sheet;
 		}
@@ -176,40 +174,19 @@ public class ReportGenerator {
 		public Record parseNext() {
 			if (tableEnd)
 				return null;
-			while (!tableEnd) {
-				row++;
-				String val = getCellVal(row, column, sheet);
-				if (val.isEmpty()) {
-					if (isRowEmpty(row)) {
-						// We hit the bottom of the table. Row now points to the
-						// first row after the table.
-						tableEnd = true;
-						// Last record
-						return readRecord(recStart, row - 1);
-					}
-				} else {
-					// Row now points to the start of the next record
-					Record record = readRecord(recStart, row - 1);
-					recStart = row; // This will be the start of the next record
-					return record;
-				}
+			String val = getCellVal(row, column, sheet);
+			if (val.isEmpty()) {
+				tableEnd = true;
+				lastRow = row - 1;
+				return null;
 			}
-
-			// We hit end of the table
-			return null;
-		}
-
-		private boolean isRowEmpty(int row) {
-			for (int col = 0; col <= LAST_COL; col++) {
-				String val = getCellVal(row, col, sheet);
-				if (!val.isEmpty())
-					return false;
-			}
-			return true;
+			Record record = readRecord(row);
+			row++;
+			return record;
 		}
 
 		public int getLastParsedRow() {
-			return recStart;
+			return lastRow;
 		}
 
 	}
@@ -224,19 +201,15 @@ public class ReportGenerator {
 	 *            row index where record starts - inclusive
 	 * @return new record object
 	 */
-	private Record readRecord(int rowStart, int rowEnd) {
-		if (rowStart > rowEnd)
-			throw new IllegalArgumentException(
-					"Start index is greater than end index");
-		listener.statusMsgChanged("Parsing record at rows " + rowStart + " - "
-				+ rowEnd);
-		Record record = new Record(rowStart + 1, rowEnd + 1);
+	private Record readRecord(int rowStart) {
+		listener.statusMsgChanged("Parsing record at row " + rowStart);
+		Record record = new Record(rowStart + 1);
 
 		String company = getCellVal(rowStart, Field.COMPANY.getColumn(),
 				mainSheet);
 		String key = company.trim().toLowerCase();
 		FirmyRecord firmyRecord = firmyMap.get(key);
-		String rowStr = "Row: " + (rowStart + 1) + " - " + (rowEnd + 1);
+		String rowStr = "Row: " + (rowStart + 1);
 		if (firmyRecord != null)
 			company = firmyMap.get(key).getFullName();
 		else
@@ -245,6 +218,7 @@ public class ReportGenerator {
 					+ company + "'");
 		record.setValue(Field.COMPANY, company);
 
+		System.out.println(rowStart);
 		int year = getYear(rowStart);
 		String intervReportNo;
 		if (year != 0) {
@@ -376,24 +350,13 @@ public class ReportGenerator {
 		record.setValue(Field.NO_OF_TECHNICIANS, noOfTechnicians);
 
 		// Stops disturbing the production
-		List<String> stops = new ArrayList<>();
-		for (int i = rowStart; i <= rowEnd; i++) {
-			String stop = getCellVal(i, Field.STOPS.getColumn(), mainSheet);
-			if (!stop.trim().isEmpty())
-				stops.add(stop);
-
-		}
-		record.setValue(Field.STOPS, stops);
+		String stop = getCellVal(rowStart, Field.STOPS.getColumn(), mainSheet);
+		record.setValue(Field.STOPS, stop);
 
 		// Description of the intervention
-		List<String> descs = new ArrayList<>();
-		for (int i = rowStart; i <= rowEnd; i++) {
-			String desc = getCellVal(i, Field.DESCRIPTION.getColumn(),
-					mainSheet);
-			if (!desc.trim().isEmpty())
-				descs.add(desc);
-		}
-		record.setValue(Field.DESCRIPTION, descs);
+		String desc = getCellVal(rowStart, Field.DESCRIPTION.getColumn(),
+				mainSheet);
+		record.setValue(Field.DESCRIPTION, desc);
 
 		// Spare parts reference
 		String reference = getCellVal(rowStart, Field.REFERENCE.getColumn(),
@@ -510,40 +473,7 @@ public class ReportGenerator {
 					fieldVal = "No";
 			}
 
-			if (fieldType == Field.STOPS) {
-				@SuppressWarnings("unchecked")
-				List<String> rows = (List<String>) val;
-
-				for (int i = 1; i <= rows.size(); i++) {
-					String fieldName = "Stops" + i;
-					if (i <= 7)
-						setField(acroFields, fieldName, rows.get(i - 1));
-					else
-						warn("Will not set Stops" + i
-								+ " field for the record at rows "
-								+ record.getRowStart() + " - "
-								+ record.getRowEnd()
-								+ " - the number of lines is greater than 7");
-				}
-			} else if (fieldType == Field.DESCRIPTION) {
-				@SuppressWarnings("unchecked")
-				List<String> rows = (List<String>) val;
-
-				for (int i = 1; i <= rows.size(); i++) {
-					String fieldName = "Description" + i;
-					if (i <= 14)
-						setField(acroFields, fieldName, rows.get(i - 1));
-					else
-						warn("Will not set Description" + i
-								+ " field for the record at row "
-								+ record.getRowStart() + " - "
-								+ record.getRowEnd()
-								+ " - the number of lines is greater than 14");
-				}
-
-			} else {
-				setField(acroFields, fieldType.getName(), fieldVal);
-			}
+			setField(acroFields, fieldType.getName(), fieldVal);
 		}
 
 		recordCount++;
